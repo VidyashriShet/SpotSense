@@ -13,3 +13,9 @@ This project aims to **promote cultural heritage** and enhance **tourism experie
 - Route mapping using **Leaflet.js + OpenRouteService**  
 - Support for Kannada language using **googletrans**
 - Flask backend for model serving and API integration  
+
+---
+
+## Research Contribution
+- Paper: “Promoting Cultural Heritage: Deep Learning-based Temple Recognition for Karnataka Tourism”
+- Presented at IEEE ICWITE 2025, BGS College of Engineering & Technology, Bangalore
