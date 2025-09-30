@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Temple Recognition</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
+</head>
+<script>
+  function validateImageUpload(input) {
+    const file = input.files[0];
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
+
+    if (file && !allowedTypes.includes(file.type)) {
+      alert("Please upload image files only (jpg, jpeg, png, webp).");
+      input.value = ""; 
+      return false;
+    }
+    return true;
+  }
+</script>
+
+<body>
+    <h1>Upload an Image to Predict the Temple</h1>
+
+    <form action="/predict" method="post" enctype="multipart/form-data">
+        <input type="file" name="file" required onchange="previewImage(event)">
+        <br>
+        <img id="preview" src="" alt="Uploaded Image Preview" style="display: none; max-width: 300px;">
+        <br>
+        <button type="submit">Predict</button>
+    </form>
+
+    {% if error %}
+        <p class="error">{{ error }}</p>
+    {% endif %}
+
+    {% if image_url %}
+        <h3>Uploaded Image:</h3>
+        <img src="{{ image_url }}" alt="Uploaded Image" style="max-width: 300px;">
+    {% endif %}
+
+    {% if prediction %}
+        <h2 id="predicted-temple">Predicted Temple: {{ prediction }}</h2>
+        <button class='more-info-btn' onclick="getTempleInfo('{{ prediction }}')">More Info</button>
+        <button class='route-btn' onclick="getTempleRoute('{{ prediction }}')">Routes</button>
+
+        <select id="language" onchange="updateLanguage('{{ prediction }}')">
+            <option value="en">English</option>
+            <option value="kn">Kannada</option>
+        </select>
+
+        <div id="temple-info" class="hidden"></div>
+        <div id="map-container" style="display: none;">
+            <div id="map" style="height: 400px; width: 100%; margin-top: 10px;"></div>
+        </div>
+    {% endif %}
+
+    <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+
+    <script>
+        const ORS_API_KEY = {{ ors_api_key | tojson }};
+        const labelTranslations = {
+            "en": { "Location": "Location", "History": "History", "Significance": "Significance" },
+            "kn": { "Location": "ಸ್ಥಳ", "History": "ಇತಿಹಾಸ", "Significance": "ಪ್ರಾಮುಖ್ಯತೆ" }
+        };
+        let destinationAddress = "";
+        let templeName = "";
+
+        function previewImage(event) {
+            const reader = new FileReader();
+            reader.onload = function () {
+                const img = document.getElementById('preview');
+                img.src = reader.result;
+                img.style.display = "block";
+            }
+            reader.readAsDataURL(event.target.files[0]);
+        }
+
+        function getTempleInfo(name) {
+            templeName = name;
+            const lang = document.getElementById("language").value;
+            fetch(`/get_info/${name}/${lang}`)
+                .then(response => response.json())
+                .then(data => {
+                    const infoDiv = document.getElementById("temple-info");
+                    destinationAddress = data.location;
+                    infoDiv.innerHTML = `
+                        <p><strong>${labelTranslations[lang]["Location"]}:</strong> ${data.location}</p>
+                        <p><strong>${labelTranslations[lang]["History"]}:</strong> ${data.history}</p>
+                        <p><strong>${labelTranslations[lang]["Significance"]}:</strong> ${data.significance}</p>
+                    `;
+                    infoDiv.classList.remove("hidden");
+                });
+        }
+
+        function updateLanguage(name) {
+            getTempleInfo(name);
+        }
+
+        function getTempleRoute(name) {
+            if (!destinationAddress) {
+                alert("Please click 'More Info' first to load the temple address.");
+                return;
+            }
+
+            document.getElementById("map-container").style.display = "block";
+
+            navigator.geolocation.getCurrentPosition(position => {
+                const userLat = position.coords.latitude;
+                const userLng = position.coords.longitude;
+
+                fetch(`https://api.openrouteservice.org/geocode/search?api_key=${ORS_API_KEY}&text=${encodeURIComponent(destinationAddress)}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        const [destLng, destLat] = data.features[0].geometry.coordinates;
+
+                        const map = L.map('map').setView([userLat, userLng], 10);
+                        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                            attribution: '© OpenStreetMap contributors'
+                        }).addTo(map);
+
+                        L.marker([userLat, userLng]).addTo(map).bindPopup("You").openPopup();
+                        L.marker([destLat, destLng]).addTo(map).bindPopup(name);
+
+                        fetch("https://api.openrouteservice.org/v2/directions/driving-car/geojson", {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json",
+                                "Authorization": ORS_API_KEY
+                            },
+                            body: JSON.stringify({
+                                coordinates: [[userLng, userLat], [destLng, destLat]]
+                            })
+                        })
+                            .then(res => res.json())
+                            .then(routeData => {
+                                L.geoJSON(routeData, { style: { color: 'blue', weight: 4 } }).addTo(map);
+                            });
+                    });
+            });
+        }
+    </script>
+</body>
+</html>
+
+<!-- <h3>${name}</h3> -->
